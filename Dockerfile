@@ -19,15 +19,19 @@ ARG NPM_REGISTRY
 
 RUN apk add --no-cache python3 make g++ linux-headers
 
-COPY package.json ./
+COPY package.json package-lock.json ./
+# Install exactly what the lockfile pins, with lifecycle scripts off; only the
+# native SQLite driver is allowed to build.
 RUN --mount=type=cache,target=/root/.npm \
-    npm install \
+    npm ci \
+      --ignore-scripts \
       --registry="${NPM_REGISTRY}" \
       --fetch-retries=5 \
       --fetch-retry-factor=2 \
       --fetch-retry-mintimeout=10000 \
       --fetch-retry-maxtimeout=120000 \
-      --fetch-timeout=300000
+      --fetch-timeout=300000 && \
+    npm rebuild better-sqlite3
 
 COPY . ./
 ENV NEXT_TELEMETRY_DISABLED=1
