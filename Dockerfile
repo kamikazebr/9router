@@ -3,6 +3,10 @@ ARG NODE_IMAGE=node:22-alpine
 ARG ALPINE_MIRROR=dl-cdn.alpinelinux.org
 ARG NPM_REGISTRY=https://registry.npmjs.org/
 ARG APP_VERSION=unknown
+# Fork provenance (set by scripts/fork/build-image.sh); see FORK.md.
+ARG UPSTREAM_VERSION=unknown
+ARG UPSTREAM_COMMIT=unknown
+ARG VCS_REF=unknown
 
 FROM ${NODE_IMAGE} AS base
 ARG ALPINE_MIRROR
@@ -16,6 +20,7 @@ RUN if [ "$ALPINE_MIRROR" != "dl-cdn.alpinelinux.org" ]; then \
 
 FROM base AS builder
 ARG NPM_REGISTRY
+ARG APP_VERSION
 
 RUN apk add --no-cache python3 make g++ linux-headers
 
@@ -35,11 +40,18 @@ RUN --mount=type=cache,target=/root/.npm \
 
 COPY . ./
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN npm run build
+# The dashboard reads its version from package.json. Stamp the fork version at
+# build time so package.json in git keeps the upstream version (no merge
+# conflict on every upstream release).
+RUN if [ "$APP_VERSION" != "unknown" ]; then npm pkg set version="$APP_VERSION"; fi && \
+    npm run build
 
 FROM ${NODE_IMAGE} AS runner
 ARG ALPINE_MIRROR
 ARG APP_VERSION
+ARG UPSTREAM_VERSION
+ARG UPSTREAM_COMMIT
+ARG VCS_REF
 WORKDIR /app
 
 RUN if [ "$ALPINE_MIRROR" != "dl-cdn.alpinelinux.org" ]; then \
@@ -47,7 +59,10 @@ RUN if [ "$ALPINE_MIRROR" != "dl-cdn.alpinelinux.org" ]; then \
     fi
 
 LABEL org.opencontainers.image.title="9router" \
-      org.opencontainers.image.version="${APP_VERSION}"
+      org.opencontainers.image.version="${APP_VERSION}" \
+      org.opencontainers.image.revision="${VCS_REF}" \
+      io.9router.upstream.version="${UPSTREAM_VERSION}" \
+      io.9router.upstream.commit="${UPSTREAM_COMMIT}"
 
 ENV NODE_ENV=production
 ENV PORT=20128

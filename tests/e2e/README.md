@@ -9,7 +9,7 @@ runs the checks and always stops the container and removes the temp dir.
 
 ```sh
 # from repo root: build the image
-docker build -t 9router:0.5.104-quotaguard-rc1 .
+scripts/fork/build-image.sh   # builds 9router:<fork version of HEAD>, see FORK.md
 
 cd tests/e2e
 PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm ci --ignore-scripts --no-audit --no-fund

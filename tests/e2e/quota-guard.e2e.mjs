@@ -10,7 +10,10 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 
-const IMAGE = process.env.IMAGE || "9router:0.5.104-quotaguard-rc1";
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
+// Default: the image scripts/fork/build-image.sh builds for HEAD.
+const IMAGE = process.env.IMAGE
+  || `9router:${execFileSync(join(REPO_ROOT, "scripts/fork/version.sh"), { encoding: "utf8" }).trim()}`;
 const NAME = "9r-e2e";
 const PORT = Number(process.env.E2E_PORT || 20197);
 const BASE = `http://127.0.0.1:${PORT}`;
