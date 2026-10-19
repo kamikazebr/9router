@@ -13,6 +13,15 @@ const OPTIONAL_FIELDS = [
 
 const MODEL_LOCK_PREFIX = "modelLock_";
 
+// quotaGuardState belongs to the quota guard (updateProviderQuotaGuardState and
+// the explicit rules in updateProviderConnection); no caller writes it directly.
+// quotaGuard config only enters through the validated PUT /api/providers/[id].
+function stripGuardFields(data, { keepConfig = false } = {}) {
+  if (!data || typeof data !== "object") return data;
+  const { quotaGuardState: _state, quotaGuard, ...rest } = data;
+  return keepConfig && quotaGuard !== undefined ? { ...rest, quotaGuard } : rest;
+}
+
 function resetHealthStateOnActivation(existing, patch) {
   if (patch?.testStatus !== "active") return patch;
 
@@ -134,6 +143,7 @@ function reorderInTx(db, providerId) {
 }
 
 export async function createProviderConnection(data) {
+  data = stripGuardFields(data);
   const db = await getAdapter();
   const now = new Date().toISOString();
   let result;
@@ -262,6 +272,7 @@ export async function createProviderConnection(data) {
 
 // Critical: OAuth refresh token race — atomic merge inside transaction
 export async function updateProviderConnection(id, data) {
+  data = stripGuardFields(data, { keepConfig: true });
   const db = await getAdapter();
   let result;
   db.transaction(() => {
