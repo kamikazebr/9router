@@ -105,3 +105,15 @@ Then:
   9router.com can be cut with `CLOUD_URL=http://127.0.0.1:9` plus an `extra_hosts`
   entry that resolves `9router.com` to `127.0.0.1`.
 - Back up `/app/data` before switching versions. Migrations run on boot.
+- **Coolify deletes local images.** The Coolify server forces a Docker cleanup when
+  disk use is above 80%, and the restart action removes images that no container
+  uses. An image loaded with `docker load` but not yet in use is deleted before the
+  restart can start it, and compose then fails pulling `9router:<version>` from
+  Docker Hub. Until the image is in a registry, load it and start it in one step on
+  the server:
+  ```sh
+  docker save 9router:<version> | gzip -1 | ssh <host> 'gunzip | docker load && docker compose \
+    --project-directory /data/coolify/services/<uuid> -f /data/coolify/services/<uuid>/docker-compose.yml \
+    --project-name <uuid> up -d --force-recreate --pull never'
+  ```
+  Update the image in the compose that Coolify stores in its **database** first.
