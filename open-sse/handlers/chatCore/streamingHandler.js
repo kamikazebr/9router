@@ -22,6 +22,18 @@ const CODEX_SOURCE_TO_TARGET = {
 };
 
 /**
+ * Whether the provider SSE must go through the transform stream instead of a
+ * plain passthrough. Claude→Claude needs it even with no format change: when
+ * the upstream is another 9router (Anthropic-compatible provider) its stream
+ * can carry "_ide"-cloaked tool names, and only translateResponse() runs
+ * decloakStreamChunk() on them.
+ */
+export function needsStreamTransform(targetFormat, sourceFormat) {
+  if (needsTranslation(targetFormat, sourceFormat)) return true;
+  return targetFormat === FORMATS.CLAUDE && sourceFormat === FORMATS.CLAUDE;
+}
+
+/**
  * Determine which SSE transform stream to use based on provider/format.
  */
 function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, customToolNames, model, connectionId, body, onStreamComplete, apiKey, credentials }) {
@@ -35,7 +47,7 @@ function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent,
     return createSSETransformStreamWithLogger(FORMATS.OPENAI_RESPONSES, codexTarget, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, customToolNames, credentials);
   }
 
-  if (needsTranslation(targetFormat, sourceFormat)) {
+  if (needsStreamTransform(targetFormat, sourceFormat)) {
     return createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, customToolNames, credentials);
   }
 
