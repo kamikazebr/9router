@@ -7,6 +7,7 @@ ARG APP_VERSION=unknown
 ARG UPSTREAM_VERSION=unknown
 ARG UPSTREAM_COMMIT=unknown
 ARG VCS_REF=unknown
+ARG SOURCE_URL=
 
 FROM ${NODE_IMAGE} AS base
 ARG ALPINE_MIRROR
@@ -52,6 +53,7 @@ ARG APP_VERSION
 ARG UPSTREAM_VERSION
 ARG UPSTREAM_COMMIT
 ARG VCS_REF
+ARG SOURCE_URL
 WORKDIR /app
 
 RUN if [ "$ALPINE_MIRROR" != "dl-cdn.alpinelinux.org" ]; then \
@@ -61,6 +63,7 @@ RUN if [ "$ALPINE_MIRROR" != "dl-cdn.alpinelinux.org" ]; then \
 LABEL org.opencontainers.image.title="9router" \
       org.opencontainers.image.version="${APP_VERSION}" \
       org.opencontainers.image.revision="${VCS_REF}" \
+      org.opencontainers.image.source="${SOURCE_URL}" \
       io.9router.upstream.version="${UPSTREAM_VERSION}" \
       io.9router.upstream.commit="${UPSTREAM_COMMIT}"
 

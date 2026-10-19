@@ -18,6 +18,8 @@ version="$(scripts/fork/version.sh)"
 upstream_version="$(node -p "require('./package.json').version")"
 upstream_commit="$(git merge-base HEAD upstream/master)"
 revision="$(git rev-parse HEAD)"
+# Links a GHCR package to its repository.
+source_url="$(git remote get-url origin 2>/dev/null | sed -E 's#^git@github.com:#https://github.com/#; s#\.git$##')"
 
 images=("9router:${version}")
 [[ -n "${IMAGE_REPO:-}" ]] && images+=("${IMAGE_REPO}:${version}")
@@ -30,6 +32,7 @@ DOCKER_BUILDKIT=1 docker build \
   --build-arg UPSTREAM_VERSION="${upstream_version}" \
   --build-arg UPSTREAM_COMMIT="${upstream_commit}" \
   --build-arg VCS_REF="${revision}" \
+  --build-arg SOURCE_URL="${source_url}" \
   "${tags[@]}" .
 
 echo
