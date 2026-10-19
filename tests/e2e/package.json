@@ -1,0 +1,8 @@
+{
+  "name": "9router-e2e",
+  "private": true,
+  "type": "module",
+  "description": "Headless Playwright e2e checks for the 9router quota guard UI",
+  "scripts": { "test": "node quota-guard.e2e.mjs" },
+  "devDependencies": { "playwright": "1.59.0" }
+}
