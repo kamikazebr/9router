@@ -19,8 +19,10 @@ upstream_version="$(node -p "require('./package.json').version")"
 upstream_commit="$(git merge-base HEAD upstream/master)"
 revision="$(git rev-parse HEAD)"
 
-tags=(-t "9router:${version}")
-[[ -n "${IMAGE_REPO:-}" ]] && tags+=(-t "${IMAGE_REPO}:${version}")
+images=("9router:${version}")
+[[ -n "${IMAGE_REPO:-}" ]] && images+=("${IMAGE_REPO}:${version}")
+tags=()
+for image in "${images[@]}"; do tags+=(-t "$image"); done
 
 echo "Building 9router ${version} (upstream ${upstream_version} @ ${upstream_commit:0:9}, fork @ ${revision:0:9})"
 DOCKER_BUILDKIT=1 docker build \
@@ -31,5 +33,5 @@ DOCKER_BUILDKIT=1 docker build \
   "${tags[@]}" .
 
 echo
-echo "Built: ${tags[*]//-t /}"
+echo "Built: ${images[*]}"
 echo "After the tests pass: git tag -a v${version} -m \"9router ${version} (upstream ${upstream_version})\""
