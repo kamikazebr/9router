@@ -12,7 +12,9 @@ async function defaultDeps() {
     loadConnections: db.getProviderConnections,
     readConnection: db.getProviderConnectionById,
     saveState: db.updateProviderQuotaGuardState,
-    fetchUsage: async (connection, force = false) => (await usage.getConnectionUsage(connection, { force })).usage,
+    // Periodic checks are read-only: token rotation stays with the request path
+    // and the background refresher. Only a manual "check now" may refresh.
+    fetchUsage: async (connection, force = false) => (await usage.getConnectionUsage(connection, { force, refresh: force })).usage,
   };
 }
 

@@ -127,12 +127,28 @@ export async function refreshAndUpdateCredentials(connection, force = false, pro
 }
 
 
-/** Shared usage read, including proxy resolution and OAuth auth-expiry recovery. */
+function isAccessTokenExpired(connection) {
+  const expiresAt = Date.parse(connection.expiresAt || connection.tokenExpiresAt || "");
+  return Number.isFinite(expiresAt) && expiresAt <= Date.now();
+}
+
+/**
+ * Shared usage read, including proxy resolution and OAuth auth-expiry recovery.
+ * With refresh: false the read never rotates OAuth tokens (an expired access
+ * token fails the read instead); unattended pollers use it so they cannot race
+ * the request path or the background refresher on a rotating refresh token.
+ */
 export async function getConnectionUsage(connection, options = {}) {
   const proxyConfig = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
   const proxyOptions = { ...proxyConfig, strictProxy: options.strictProxy ?? proxyConfig.strictProxy };
   const isOAuth = connection.authType === "oauth";
-  if (isOAuth) {
+  const allowRefresh = options.refresh !== false;
+  if (isOAuth && !allowRefresh && isAccessTokenExpired(connection)) {
+    const failure = new Error("Access token expired; waiting for the next credential refresh");
+    failure.status = 401;
+    throw failure;
+  }
+  if (isOAuth && allowRefresh) {
     try {
       ({ connection } = await refreshAndUpdateCredentials(connection, false, proxyOptions));
     } catch (error) {
@@ -142,7 +158,7 @@ export async function getConnectionUsage(connection, options = {}) {
     }
   }
   let usage = await getUsageForProvider(connection, proxyOptions, { force: options.force === true });
-  if (isOAuth && isAuthExpiredMessage(usage) && connection.refreshToken) {
+  if (isOAuth && allowRefresh && isAuthExpiredMessage(usage) && connection.refreshToken) {
     try {
       ({ connection } = await refreshAndUpdateCredentials(connection, true, proxyOptions));
       usage = await getUsageForProvider(connection, proxyOptions, { force: options.force === true });
