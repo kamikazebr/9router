@@ -1126,6 +1126,7 @@ export default function ProviderLimits() {
           // Use table layout for all providers
           const isInactive = conn.isActive === false;
           const isGuardPaused = !isInactive && isQuotaGuardPaused(conn);
+          const guardPausedModels = !isInactive && conn.quotaGuard?.enabled === true ? conn.quotaGuardState?.pausedModels || [] : [];
           const isCodex = conn.provider === "codex";
           const claudeReset = conn.provider === "claude" ? quota?.raw?.resetCredits : null;
           const resetLabel = isCodex ? "Codex reset credit" : "Claude limit reset";
@@ -1170,6 +1171,13 @@ export default function ProviderLimits() {
                           {getConnectionSecondaryLabel(conn)}
                         </p>
                       ) : null}
+                      {conn.provider !== "kiro" && (isGuardPaused || guardPausedModels.length > 0) && (
+                        <div className="mt-1">
+                          <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400">
+                            {isGuardPaused ? "auto-paused" : `paused: ${guardPausedModels.join(", ")}`}
+                          </span>
+                        </div>
+                      )}
                       {conn.provider === "kiro" && (
                         <div className="mt-1 flex flex-wrap items-center gap-1">
                           <span className="rounded-full bg-brand-500/10 px-2 py-0.5 text-[10px] font-semibold text-brand-600 dark:text-brand-300">

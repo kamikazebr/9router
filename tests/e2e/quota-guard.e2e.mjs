@@ -184,13 +184,15 @@ try {
     assert((await b.getByRole("switch").first().getAttribute("aria-checked")) === "true", "toggle not ON");
   });
 
-  await check("Quota Tracker: Owner B shows an \"auto-paused\" badge", async () => {
+  await check("Quota Tracker: guard badges for Owner B (auto-paused) and Owner A (paused: fable)", async () => {
     await page.goto(`${BASE}/dashboard/quota`);
     await page.getByText("Owner B").first().waitFor({ timeout: 30000 });
     await sleep(1500);
     const n = await page.getByText("auto-paused", { exact: true }).count();
     assert(n > 0, `no "auto-paused" text anywhere on the Quota Tracker (count=${n})`);
-  }, { knownBug: 'ProviderLimits/index.js renders the status badge only inside the `conn.provider === "kiro"` block, so Claude cards never show "auto-paused"/"disabled"' });
+    const m = await page.getByText("paused: fable", { exact: true }).count();
+    assert(m > 0, `no "paused: fable" badge on the Quota Tracker (count=${m})`);
+  });
 
   await check("Owner B Resume now: PUT quotaGuardResume, 200, override set, no longer auto-paused", async () => {
     await gotoProvider();
