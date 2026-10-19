@@ -26,7 +26,9 @@ const oauthCooldown = new Map();
 // Dedup + short TTL cache per access token. Many tabs / many accounts / auto-refresh
 // all funnel through here; without this each call hits Anthropic and triggers 429.
 const USAGE_CACHE_TTL_MS = 300000;
-const usageCache = new Map(); // token -> { promise } | { result, expiresAt }
+// After a failed read keep serving the last good reading, but retry soon.
+const USAGE_RETRY_AFTER_FAILURE_MS = 60000;
+const usageCache = new Map(); // token -> { promise, lastGood } | { result, expiresAt, stale? }
 
 export async function getClaudeUsage(accessToken, proxyOptions = null, options = {}) {
   const force = options?.force === true;
@@ -35,13 +37,34 @@ export async function getClaudeUsage(accessToken, proxyOptions = null, options =
   if (!force && accessToken) {
     const hit = usageCache.get(accessToken);
     if (hit?.promise) return hit.promise;
-    if (hit && hit.expiresAt > Date.now()) return hit.result;
+    if (hit && hit.expiresAt > Date.now()) return hit.stale ? { ...hit.result, stale: true } : hit.result;
   }
 
-  const stale = (!force && accessToken && usageCache.get(accessToken)?.result) || null;
+  // Last real quota reading, kept even across a forced read so a failed manual
+  // check cannot evict it.
+  const previous = accessToken ? usageCache.get(accessToken) : null;
+  const lastGood = previous?.result || previous?.lastGood || null;
+
+  // Every settled read must replace the in-flight entry: leaving { promise }
+  // behind after a failure would serve that failure to every later read until
+  // the access token rotates (hours), freezing anything that polls usage.
+  const settleFailure = () => {
+    if (!accessToken) return;
+    if (lastGood) {
+      usageCache.set(accessToken, { result: lastGood, stale: true, expiresAt: Date.now() + USAGE_RETRY_AFTER_FAILURE_MS });
+    } else {
+      usageCache.delete(accessToken);
+    }
+  };
 
   const promise = (async () => {
-    const result = await fetchClaudeUsageRaw(accessToken, proxyOptions);
+    let result;
+    try {
+      result = await fetchClaudeUsageRaw(accessToken, proxyOptions);
+    } catch (error) {
+      settleFailure();
+      throw error;
+    }
     // Only cache real quota data, not soft-failure {message: ...} payloads
     if (accessToken && result?.quotas) {
       usageCache.set(accessToken, {
@@ -50,12 +73,14 @@ export async function getClaudeUsage(accessToken, proxyOptions = null, options =
       });
       return result;
     }
-    // Soft failure (429/error): prefer the last good read over a transient error
-    if (stale) return { ...stale, stale: true };
+    settleFailure();
+    // Soft failure (429/error): prefer the last good read over a transient
+    // error, except on a forced read, which reports the failure as-is.
+    if (!force && lastGood) return { ...lastGood, stale: true };
     return result;
   })();
 
-  if (accessToken) usageCache.set(accessToken, { promise });
+  if (accessToken) usageCache.set(accessToken, { promise, lastGood });
   return promise;
 }
 
