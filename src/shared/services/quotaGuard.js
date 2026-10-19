@@ -25,9 +25,27 @@ export function isQuotaGuardPaused(connection) {
   return connection.quotaGuard?.enabled === true && connection.quotaGuardState?.paused === true;
 }
 
+// Claude reports per-model weekly budgets ("weekly fable (7d)", "weekly opus (7d)")
+// next to the account-wide session and weekly windows. Those pause only requests
+// for that model family, so a drained Fable budget does not block Sonnet or Haiku.
+const CLAUDE_ACCOUNT_WINDOWS = new Set(["session (5h)", "weekly (7d)"]);
+const CLAUDE_MODEL_WINDOW = /^weekly (.+) \(7d\)$/;
+
+export function modelMatchesFamily(model, family) {
+  if (!model || !family) return false;
+  return String(model).toLowerCase().split(/[^a-z0-9]+/).includes(String(family).toLowerCase());
+}
+
+export function isQuotaGuardModelPaused(connection, model) {
+  if (connection.quotaGuard?.enabled !== true) return false;
+  const families = connection.quotaGuardState?.pausedModels;
+  return Array.isArray(families) && families.some((family) => modelMatchesFamily(model, family));
+}
+
 export function resumeQuotaGuard(state = {}, now = Date.now()) {
-  return { ...state, paused: false, override: true, overrideStartedAt: new Date(now).toISOString(),
-    overrideResets: Object.fromEntries(Object.entries(state.windows || {}).map(([key, window]) => [key, window.resetAt])) };
+  const windows = { ...(state.windows || {}), ...(state.modelWindows || {}) };
+  return { ...state, paused: false, pausedModels: [], override: true, overrideStartedAt: new Date(now).toISOString(),
+    overrideResets: Object.fromEntries(Object.entries(windows).map(([key, window]) => [key, window.resetAt])) };
 }
 
 export function evaluateQuotaGuard(connection, usage, now = Date.now()) {
@@ -36,36 +54,56 @@ export function evaluateQuotaGuard(connection, usage, now = Date.now()) {
   if (!connection.quotaGuard?.enabled) return { paused: false, override: false, checkedAt };
 
   const windows = {};
+  const modelWindows = {};
   for (const [name, quota] of Object.entries(usage?.quotas || {})) {
     // These providers also report unrelated review/model budgets. Protect the
     // account's shared session/weekly allowance, not a separate product's quota.
     if (connection.provider === "codex" && !["session", "weekly"].includes(name)) continue;
-    if (connection.provider === "claude" && !["session (5h)", "weekly (7d)"].includes(name)) continue;
+    let family = null;
+    if (connection.provider === "claude" && !CLAUDE_ACCOUNT_WINDOWS.has(name)) {
+      family = CLAUDE_MODEL_WINDOW.exec(name)?.[1] || null;
+      if (!family) continue;
+    }
     const remainingPercent = percentage(quota);
     if (remainingPercent === null) continue;
     const resetMs = Date.parse(quota.resetAt);
-    windows[name] = { remainingPercent, resetAt: Number.isFinite(resetMs) ? new Date(resetMs).toISOString() : null };
+    const entry = { remainingPercent, resetAt: Number.isFinite(resetMs) ? new Date(resetMs).toISOString() : null };
+    if (family) modelWindows[name] = { ...entry, family };
+    else windows[name] = entry;
+  }
+
+  if (!Object.keys(windows).length || usage?.error || usage?.message || usage?.stale) {
+    return { ...previous, checkedAt, error: "Quota monitoring unavailable or incomplete; previous state retained" };
+  }
+
+  // A window the provider stopped reporting after its last reset time has reset
+  // (Claude can omit an idle 5h session). Treating it as missing would keep an
+  // account paused forever, since a paused account starts no new window.
+  for (const [name, window] of Object.entries(previous.windows || {})) {
+    if (!windows[name] && window?.resetAt && Date.parse(window.resetAt) <= now) {
+      windows[name] = { remainingPercent: 100, resetAt: null };
+    }
   }
 
   const entries = Object.entries(windows);
   const incomplete = Object.keys(previous.windows || {}).some((name) => !windows[name]);
-  if (!entries.length || usage?.error || usage?.message || usage?.stale) {
-    return { ...previous, checkedAt, error: "Quota monitoring unavailable or incomplete; previous state retained" };
-  }
-
+  const threshold = connection.quotaGuard.thresholdPercent;
   const remainingPercent = Math.min(...entries.map(([, window]) => window.remainingPercent));
-  const belowThreshold = remainingPercent <= connection.quotaGuard.thresholdPercent;
+  const belowThreshold = remainingPercent <= threshold;
   if (incomplete && !belowThreshold) {
     return { ...previous, checkedAt, error: "Quota monitoring incomplete; previous state retained" };
   }
-  const resetConfirmed = Object.entries(previous.overrideResets || {}).some(([name, resetAt]) => (
-    resetAt && Date.parse(resetAt) <= now && windows[name]?.resetAt
-    && Date.parse(windows[name].resetAt) > Date.parse(resetAt)
-  ));
-  const override = previous.override === true && belowThreshold && !resetConfirmed;
+  const lowModels = [...new Set(Object.values(modelWindows)
+    .filter((window) => window.remainingPercent <= threshold).map((window) => window.family))];
+  const resetConfirmed = Object.entries(previous.overrideResets || {}).some(([name, resetAt]) => {
+    const current = windows[name] || modelWindows[name];
+    return resetAt && Date.parse(resetAt) <= now && current?.resetAt && Date.parse(current.resetAt) > Date.parse(resetAt);
+  });
+  const override = previous.override === true && (belowThreshold || lowModels.length > 0) && !resetConfirmed;
   return {
     paused: belowThreshold && !override, override, checkedAt, remainingPercent,
     windows: incomplete ? { ...previous.windows, ...windows } : windows,
+    modelWindows, pausedModels: override ? [] : lowModels,
     ...(incomplete ? { error: "Quota monitoring incomplete" } : {}),
     ...(override ? { overrideResets: previous.overrideResets, overrideStartedAt: previous.overrideStartedAt } : {}),
   };
