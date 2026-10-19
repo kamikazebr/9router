@@ -120,6 +120,10 @@ export async function PUT(request, { params }) {
         return NextResponse.json({ error: "Quota monitoring unavailable for this provider" }, { status: 400 });
       }
     }
+    if (body.quotaGuardResume !== undefined) {
+      if (body.quotaGuardResume !== true) return NextResponse.json({ error: "quotaGuardResume must be true" }, { status: 400 });
+      updateData.quotaGuardResume = true;
+    }
     if (name !== undefined) updateData.name = name;
     if (priority !== undefined) updateData.priority = priority;
     if (globalPriority !== undefined) updateData.globalPriority = globalPriority;

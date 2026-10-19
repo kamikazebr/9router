@@ -323,7 +323,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
         </div>
         <Toggle
           size="sm"
-          checked={(connection.isActive ?? true) && !isQuotaGuardPaused(connection)}
+          checked={connection.isActive ?? true}
           onChange={onToggleActive}
           title={(connection.isActive ?? true) ? "Disable connection" : "Enable connection"}
         />

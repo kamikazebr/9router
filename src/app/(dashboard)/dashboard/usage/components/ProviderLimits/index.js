@@ -1124,7 +1124,8 @@ export default function ProviderLimits() {
           const error = errors[conn.id];
 
           // Use table layout for all providers
-          const isInactive = conn.isActive === false || isQuotaGuardPaused(conn);
+          const isInactive = conn.isActive === false;
+          const isGuardPaused = !isInactive && isQuotaGuardPaused(conn);
           const isCodex = conn.provider === "codex";
           const claudeReset = conn.provider === "claude" ? quota?.raw?.resetCredits : null;
           const resetLabel = isCodex ? "Codex reset credit" : "Claude limit reset";
@@ -1139,7 +1140,7 @@ export default function ProviderLimits() {
             <Card
               key={conn.id}
               padding="none"
-              className={`min-w-0 ${isInactive ? "opacity-60" : ""}`}
+              className={`min-w-0 ${isInactive || isGuardPaused ? "opacity-60" : ""}`}
             >
               <div className="px-3 py-2 border-b border-black/10 dark:border-white/10">
                 <div className="flex items-center justify-between gap-2">
@@ -1183,6 +1184,8 @@ export default function ProviderLimits() {
                             className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
                               isInactive
                                 ? "bg-surface-2 text-text-muted"
+                                : isGuardPaused
+                                  ? "bg-amber-500/10 text-amber-600 dark:text-amber-400"
                                 : conn.testStatus === "active" || conn.testStatus === "success"
                                   ? "bg-green-500/10 text-green-600 dark:text-green-400"
                                   : conn.testStatus === "error" || conn.testStatus === "expired" || conn.testStatus === "unavailable"
@@ -1190,7 +1193,7 @@ export default function ProviderLimits() {
                                     : "bg-surface-2 text-text-muted"
                             }`}
                           >
-                            {isInactive ? "disabled" : conn.testStatus || "unknown"}
+                            {isInactive ? "disabled" : isGuardPaused ? "auto-paused" : conn.testStatus || "unknown"}
                           </span>
                           {conn.providerSpecificData?.profileArn && (
                             <button
@@ -1347,7 +1350,7 @@ export default function ProviderLimits() {
                     >
                       <Toggle
                         size="sm"
-                        checked={(conn.isActive ?? true) && !isQuotaGuardPaused(conn)}
+                        checked={conn.isActive ?? true}
                         disabled={rowBusy}
                         onChange={(nextActive) =>
                           handleToggleConnectionActive(conn.id, nextActive)

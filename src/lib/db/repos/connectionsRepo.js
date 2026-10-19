@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
-import { isQuotaGuardPaused, resumeQuotaGuard } from "@/shared/services/quotaGuard.js";
+import { hasQuotaGuardPause, resumeQuotaGuard } from "@/shared/services/quotaGuard.js";
 
 const OPTIONAL_FIELDS = [
   "displayName", "email", "globalPriority", "defaultModel",
@@ -15,11 +15,13 @@ const MODEL_LOCK_PREFIX = "modelLock_";
 
 // quotaGuardState belongs to the quota guard (updateProviderQuotaGuardState and
 // the explicit rules in updateProviderConnection); no caller writes it directly.
-// quotaGuard config only enters through the validated PUT /api/providers/[id].
+// quotaGuard config and the quotaGuardResume action only enter through the
+// validated PUT /api/providers/[id].
 function stripGuardFields(data, { keepConfig = false } = {}) {
   if (!data || typeof data !== "object") return data;
-  const { quotaGuardState: _state, quotaGuard, ...rest } = data;
-  return keepConfig && quotaGuard !== undefined ? { ...rest, quotaGuard } : rest;
+  const { quotaGuardState: _state, quotaGuard, quotaGuardResume, ...rest } = data;
+  if (!keepConfig) return rest;
+  return { ...rest, ...(quotaGuard !== undefined ? { quotaGuard } : {}), ...(quotaGuardResume === true ? { quotaGuardResume } : {}) };
 }
 
 function resetHealthStateOnActivation(existing, patch) {
@@ -272,7 +274,8 @@ export async function createProviderConnection(data) {
 
 // Critical: OAuth refresh token race — atomic merge inside transaction
 export async function updateProviderConnection(id, data) {
-  data = stripGuardFields(data, { keepConfig: true });
+  const { quotaGuardResume, ...patch } = stripGuardFields(data, { keepConfig: true });
+  data = patch;
   const db = await getAdapter();
   let result;
   db.transaction(() => {
@@ -284,10 +287,14 @@ export async function updateProviderConnection(id, data) {
     if (data.quotaGuard !== undefined) {
       // Changing configuration discards an old override. Preserve a pause until
       // the monitor confirms recovery; disabling the guard removes its pause.
+      const keep = data.quotaGuard.enabled === true;
       merged.quotaGuardState = { ...existing.quotaGuardState, override: false,
-        paused: data.quotaGuard.enabled === true && existing.quotaGuardState?.paused === true };
+        paused: keep && existing.quotaGuardState?.paused === true,
+        pausedModels: keep ? existing.quotaGuardState?.pausedModels || [] : [] };
     }
-    if (data.isActive === true && isQuotaGuardPaused(existing)) {
+    // Only an explicit resume bypasses the guard. Re-enabling a disabled account
+    // keeps its pause; the monitor re-evaluates it on the next check.
+    if (quotaGuardResume === true && hasQuotaGuardPause(existing)) {
       merged.quotaGuardState = resumeQuotaGuard(existing.quotaGuardState);
     }
     upsert(db, merged);

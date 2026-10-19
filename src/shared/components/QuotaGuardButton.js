@@ -8,16 +8,20 @@ import Modal from "./Modal";
 import Toggle from "./Toggle";
 import Tooltip from "./Tooltip";
 import { USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
-import { DEFAULT_QUOTA_GUARD, isQuotaGuardPaused } from "@/shared/services/quotaGuard.js";
+import { DEFAULT_QUOTA_GUARD, hasQuotaGuardPause, isQuotaGuardPaused } from "@/shared/services/quotaGuard.js";
+
+const pausedModelsLabel = (state) => (state?.pausedModels?.length ? `Paused for ${state.pausedModels.join(", ")} models` : "");
 
 export default function QuotaGuardButton({ connection, compact = false, onUpdated }) {
   const [openAccount, setOpenAccount] = useState(null);
   const [loading, setLoading] = useState(false);
   const enabled = connection.quotaGuard?.enabled === true;
   const paused = isQuotaGuardPaused(connection);
+  const held = hasQuotaGuardPause(connection);
   const supported = USAGE_SUPPORTED_PROVIDERS.includes(connection.provider);
   const status = !supported ? "Quota monitoring unavailable for this provider"
     : paused ? `Auto-paused at ${connection.quotaGuardState.remainingPercent ?? "unknown"}% remaining`
+    : held ? pausedModelsLabel(connection.quotaGuardState)
     : connection.quotaGuardState?.override ? "Manually resumed until recovery or next confirmed reset"
     : enabled ? `Pause at ${connection.quotaGuard.thresholdPercent}% remaining` : "Configure quota guard";
 
@@ -41,7 +45,7 @@ export default function QuotaGuardButton({ connection, compact = false, onUpdate
           aria-pressed={enabled}
           onClick={openDialog}
           disabled={loading}
-          className={`${compact ? "flex h-8 w-8 items-center justify-center rounded-lg" : "flex flex-col items-center rounded px-2 py-1"} transition-colors hover:bg-black/5 dark:hover:bg-white/5 ${paused ? "text-amber-500" : enabled ? "text-primary" : "text-text-muted hover:text-primary"}`}
+          className={`${compact ? "flex h-8 w-8 items-center justify-center rounded-lg" : "flex flex-col items-center rounded px-2 py-1"} transition-colors hover:bg-black/5 dark:hover:bg-white/5 ${held ? "text-amber-500" : enabled ? "text-primary" : "text-text-muted hover:text-primary"}`}
         >
           <span className="material-symbols-outlined text-[18px]">shield</span>
           {!compact && <span className="text-[10px] leading-tight">Quota guard</span>}
@@ -64,13 +68,15 @@ function QuotaGuardDialog({ connection, supported, onClose, onUpdated }) {
   const valid = threshold.trim() !== "" && Number.isFinite(Number(threshold)) && Number(threshold) >= 0 && Number(threshold) < 100;
   const state = account.quotaGuardState;
   const paused = isQuotaGuardPaused(account);
+  const held = hasQuotaGuardPause(account);
+  const readings = Object.entries({ ...(state?.windows || {}), ...(state?.modelWindows || {}) });
 
   async function update(action, close = false) {
     setBusy(true);
     setError("");
     try {
       const checking = action === "check";
-      const body = action === "save" ? { quotaGuard: { enabled, thresholdPercent: Number(threshold) } } : { isActive: true };
+      const body = action === "save" ? { quotaGuard: { enabled, thresholdPercent: Number(threshold) } } : { isActive: true, quotaGuardResume: true };
       const response = await fetch(`/api/providers/${encodeURIComponent(connection.id)}${checking ? "/quota-guard" : ""}`, {
         method: checking ? "POST" : "PUT",
         headers: { "Content-Type": "application/json" },
@@ -108,14 +114,20 @@ function QuotaGuardDialog({ connection, supported, onClose, onUpdated }) {
             {account.isActive === false ? "Manually disabled" : paused ? `Auto-paused · ${state.remainingPercent ?? "unknown"}% remaining`
               : state?.override ? "Manually resumed until recovery or next confirmed reset"
               : state?.remainingPercent != null ? `Last reading: ${state.remainingPercent}% remaining` : "No quota reading available"}
+            {held && state?.pausedModels?.length > 0 && <p className="mt-1 text-amber-500">{pausedModelsLabel(state)}</p>}
+            {readings.length > 0 && <ul className="mt-1 text-xs text-text-muted">
+              {readings.map(([name, window]) => (
+                <li key={name}>{name}: {Math.round(window.remainingPercent)}% remaining{window.resetAt ? ` · resets ${new Date(window.resetAt).toLocaleString()}` : ""}</li>
+              ))}
+            </ul>}
             {state?.checkedAt && <p className="mt-1 text-xs text-text-muted">Checked {new Date(state.checkedAt).toLocaleString()}</p>}
             {state?.error && <p className="mt-1 text-xs text-amber-500">{state.error}</p>}
           </div>
           <div className="flex flex-wrap gap-2">
             <Button variant="secondary" size="sm" icon="refresh" disabled={busy} onClick={() => update("check")}>Check usage now</Button>
-            {(paused || account.isActive === false) && <Button variant="secondary" size="sm" icon="play_arrow" disabled={busy} onClick={() => update("resume")}>Resume now</Button>}
+            {(held || account.isActive === false) && <Button variant="secondary" size="sm" icon="play_arrow" disabled={busy} onClick={() => update("resume")}>Resume now</Button>}
           </div>
-          {paused && <p className="text-xs text-text-muted">Resume now bypasses the quota threshold until allowance recovers or a reset is confirmed. Provider rate limits still apply.</p>}
+          {held && <p className="text-xs text-text-muted">Resume now bypasses the quota threshold until allowance recovers or a reset is confirmed. Provider rate limits still apply.</p>}
         </>}
         {error && <p className="text-sm text-red-500" role="alert">{error}</p>}
       </div>

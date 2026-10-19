@@ -23,6 +23,15 @@ describe("quota guard configuration API", () => {
     expect(res.status).toBe(400);
     expect(store.connection.quotaGuard).toBeUndefined();
   });
+  it("passes an explicit resume through and rejects any other value", async () => {
+    const ok = await PUT(request({ isActive: true, quotaGuardResume: true }), { params: { id: "a" } });
+    expect(ok.status).toBe(200);
+    expect(store.connection.quotaGuardResume).toBe(true);
+    for (const quotaGuardResume of [false, "true", 1]) {
+      const res = await PUT(request({ quotaGuardResume }), { params: { id: "a" } });
+      expect(res.status).toBe(400);
+    }
+  });
   it("does not enable monitoring for a provider without a usage reader", async () => {
     store.connection.provider = "unsupported";
     const res = await PUT(request({ quotaGuard: { enabled: true, thresholdPercent: 50 } }), { params: { id: "a" } });

@@ -36,6 +36,12 @@ export function modelMatchesFamily(model, family) {
   return String(model).toLowerCase().split(/[^a-z0-9]+/).includes(String(family).toLowerCase());
 }
 
+// Any automatic pause: the whole account or some model families.
+export function hasQuotaGuardPause(connection) {
+  return isQuotaGuardPaused(connection) || (connection.quotaGuard?.enabled === true
+    && Array.isArray(connection.quotaGuardState?.pausedModels) && connection.quotaGuardState.pausedModels.length > 0);
+}
+
 export function isQuotaGuardModelPaused(connection, model) {
   if (connection.quotaGuard?.enabled !== true) return false;
   const families = connection.quotaGuardState?.pausedModels;

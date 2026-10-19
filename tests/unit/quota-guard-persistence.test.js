@@ -24,13 +24,23 @@ async function create(name) {
 }
 
 describe("quota guard persistence", () => {
-  it("manual enable resumes an automatic pause without removing provider locks", async () => {
+  it("an explicit resume overrides an automatic pause without removing provider locks", async () => {
     const c = await create("resume");
     await repo.updateProviderConnection(c.id, { modelLock_test: "2099-01-01T00:00:00Z" });
-    const resumed = await repo.updateProviderConnection(c.id, { isActive: true });
+    const resumed = await repo.updateProviderConnection(c.id, { isActive: true, quotaGuardResume: true });
     expect(resumed.quotaGuardState.paused).toBe(false);
     expect(resumed.quotaGuardState.override).toBe(true);
     expect(resumed.modelLock_test).toBe("2099-01-01T00:00:00Z");
+    expect(resumed.quotaGuardResume).toBeUndefined();
+  });
+
+  it("re-enabling a connection keeps its automatic pause", async () => {
+    const c = await create("re-enable");
+    await repo.updateProviderConnection(c.id, { isActive: false });
+    const enabled = await repo.updateProviderConnection(c.id, { isActive: true });
+    expect(enabled.isActive).toBe(true);
+    expect(enabled.quotaGuardState.paused).toBe(true);
+    expect(enabled.quotaGuardState.override).not.toBe(true);
   });
 
   it("rejects an obsolete monitor write after manual disable or resume", async () => {
@@ -40,7 +50,7 @@ describe("quota guard persistence", () => {
     expect(await repo.updateProviderQuotaGuardState(c, { paused: false })).toBeNull();
     const disabled = await repo.getProviderConnectionById(c.id);
     expect(disabled.isActive).toBe(false);
-    await repo.updateProviderConnection(c.id, { isActive: true });
+    await repo.updateProviderConnection(c.id, { isActive: true, quotaGuardResume: true });
     expect(await repo.updateProviderQuotaGuardState(c, { paused: true })).toBeNull();
     expect((await repo.getProviderConnectionById(c.id)).quotaGuardState.override).toBe(true);
   });
