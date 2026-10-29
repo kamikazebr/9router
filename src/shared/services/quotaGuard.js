@@ -11,7 +11,8 @@ export function normalizeQuotaGuard(value) {
   return { enabled: value.enabled, thresholdPercent: value.thresholdPercent };
 }
 
-function percentage(quota) {
+// Remaining share of a provider quota window, 0-100, or null when unknown/unlimited.
+export function quotaRemainingPercent(quota) {
   if (!quota || quota.unlimited === true) return null;
   let result = quota.remainingPercentage;
   if (result == null && typeof quota.total === "number" && quota.total > 0) {
@@ -29,7 +30,7 @@ export function isQuotaGuardPaused(connection) {
 // next to the account-wide session and weekly windows. Those pause only requests
 // for that model family, so a drained Fable budget does not block Sonnet or Haiku.
 const CLAUDE_ACCOUNT_WINDOWS = new Set(["session (5h)", "weekly (7d)"]);
-const CLAUDE_MODEL_WINDOW = /^weekly (.+) \(7d\)$/;
+export const CLAUDE_MODEL_WINDOW = /^weekly (.+) \(7d\)$/;
 
 export function modelMatchesFamily(model, family) {
   if (!model || !family) return false;
@@ -70,7 +71,7 @@ export function evaluateQuotaGuard(connection, usage, now = Date.now()) {
       family = CLAUDE_MODEL_WINDOW.exec(name)?.[1] || null;
       if (!family) continue;
     }
-    const remainingPercent = percentage(quota);
+    const remainingPercent = quotaRemainingPercent(quota);
     if (remainingPercent === null) continue;
     const resetMs = Date.parse(quota.resetAt);
     const entry = { remainingPercent, resetAt: Number.isFinite(resetMs) ? new Date(resetMs).toISOString() : null };

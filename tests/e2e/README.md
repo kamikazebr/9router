@@ -24,3 +24,14 @@ default `../../../9router-patches/e2e-screenshots`), `E2E_TMPDIR`, `E2E_KEEP_DIR
 
 Checks marked `knownBug` print XFAIL and do not fail the run; they flip to XPASS once fixed.
 Exit code is 1 if any non-known check fails.
+
+# Quota API e2e (`GET /v1/quota`)
+
+Same container flow, no browser. Also seeds API keys (open, restricted to Claude,
+restricted to Codex, disabled) and maps the Anthropic hosts to 127.0.0.1 inside the
+container, so the fake tokens never leave the machine.
+
+```sh
+cd tests/e2e
+node quota-api.e2e.mjs          # Node >= 22.5; E2E_PORT default 20198
+```

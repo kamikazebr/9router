@@ -40,7 +40,7 @@ docker image inspect 9router:<version> --format '{{json .Config.Labels}}'
 
 | | |
 |---|---|
-| Fork version | `0.5.104-fork.1` |
+| Fork version | `0.5.104-fork.2` |
 | Upstream base | `0.5.104` @ `87a74e1` (2026-10-15) |
 
 ## Patches carried
@@ -53,6 +53,19 @@ docker image inspect 9router:<version> --format '{{json .Config.Labels}}'
 | Reproducible builds | `ffc2884c` `14ab7ec4` | Upstream has no lockfile. The fork pins one and installs with `npm ci --ignore-scripts`. Only `better-sqlite3` may build. |
 | Fork versioning | this file, `scripts/fork/`, Dockerfile labels | Fork versions with provenance. |
 | Headless e2e | `ece25205`, `tests/e2e/` | Dashboard checks for the quota guard. |
+| Quota API for key holders | `GET /v1/quota` | See below. |
+
+**Quota API:** `GET /v1/quota` with the same API key as `/v1/messages` returns each
+account's windows (5h session, weekly, per-model weekly such as `weekly opus (7d)`)
+as used/remaining percent with the reset time, plus its quota guard state. Providers
+report percentages, not token counts. The route never forces a provider read or
+refreshes OAuth credentials, and caches the whole report for 60 s. Emails are
+masked, and a restricted key sees only the providers its combos and models reach.
+When the live read fails, it serves the quota guard's last reading marked `stale`.
+
+```sh
+curl -s https://<host>/v1/quota -H "Authorization: Bearer $KEY" | jq
+```
 
 **Quota guard review fixes:**
 - A failed Claude usage read froze the usage cache until the access token rotated. This bug was already in upstream.
